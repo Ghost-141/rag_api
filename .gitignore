@@ -9,3 +9,8 @@ venv/
 *.pyc
 dev.yml
 SHOPIFY.md
+
+# Synapse deployment
+deploy-history.log
+.env.*
+!.env.synapse.example

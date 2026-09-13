@@ -1,0 +1,106 @@
+# Synapse production stack for the code-interpreter server.
+# Never use docker-compose.yaml / db-compose.yaml / api-compose.yaml on that host: they publish
+# Postgres and the API on 0.0.0.0 with default credentials, and Docker bypasses ufw.
+# `.env` sets COMPOSE_FILE to this file so a bare `docker compose` always picks it.
+name: synapse-rag
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
+services:
+  rag_db:
+    image: pgvector/pgvector:pg17
+    container_name: synapse-rag-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - effective_cache_size=2GB
+      - -c
+      - maintenance_work_mem=512MB
+      - -c
+      - work_mem=32MB
+      - -c
+      - max_connections=200
+      - -c
+      - max_wal_size=4GB
+      - -c
+      - checkpoint_timeout=15min
+      - -c
+      - idle_in_transaction_session_timeout=10min
+    shm_size: 1g
+    volumes:
+      - rag_pgdata:/var/lib/postgresql/data
+    networks:
+      - rag_internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 3g
+    logging: *default-logging
+
+  rag_api:
+    build:
+      context: .
+      dockerfile: Dockerfile.lite
+    image: synapse-rag-api:${RAG_IMAGE_TAG:-latest}
+    container_name: synapse-rag-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_HOST: rag_db
+      DB_PORT: "5432"
+      RAG_HOST: 0.0.0.0
+      RAG_PORT: "8000"
+      RAG_UPLOAD_DIR: /app/uploads
+      RAG_WORKERS: "2"
+    command: ["sh", "scripts/synapse-start.sh"]
+    volumes:
+      - rag_uploads:/app/uploads
+    ports:
+      - "127.0.0.1:${RAG_HOST_PORT:-18000}:8000"
+    depends_on:
+      rag_db:
+        condition: service_healthy
+    networks:
+      - rag_internal
+      - rag_edge
+    stop_grace_period: 120s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 6g
+    logging: *default-logging
+
+volumes:
+  rag_pgdata:
+  rag_uploads:
+
+networks:
+  rag_internal:
+    internal: true
+  rag_edge:
+    name: ${RAG_EDGE_NETWORK:-rag_edge}
+    external: true
