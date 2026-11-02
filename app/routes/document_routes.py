@@ -320,6 +320,9 @@ def validate_file_path(base_dir: str, file_path: str) -> Optional[str]:
         return None
 
 
+MAX_FILENAME_BYTES = 255
+
+
 def _make_unique_temp_path(user_id: str, filename: str) -> Optional[str]:
     """Build a unique temp file path under RAG_UPLOAD_DIR/{user_id}/ to prevent
     concurrent upload collisions. Returns a validated absolute path, or None if
@@ -328,9 +331,16 @@ def _make_unique_temp_path(user_id: str, filename: str) -> Optional[str]:
     if validate_file_path(RAG_UPLOAD_DIR, os.path.join(user_id, filename)) is None:
         return None
     # unique_name is stem + "_" + [0-9a-f]{32} + suffix — no path separators,
-    # so it cannot escape the directory validated above.
+    # so it cannot escape the directory validated above. The stem stays because
+    # file search reports this name as the source, but it is cut to fit Linux's
+    # 255-byte limit, which a long non-Latin name would otherwise overflow.
     p = Path(filename)
-    unique_name = f"{p.stem}_{uuid.uuid4().hex}{p.suffix}"
+    unique_id = uuid.uuid4().hex
+    stem_budget = max(
+        0, MAX_FILENAME_BYTES - len(f"_{unique_id}{p.suffix}".encode("utf-8"))
+    )
+    stem = p.stem.encode("utf-8")[:stem_budget].decode("utf-8", "ignore")
+    unique_name = f"{stem}_{unique_id}{p.suffix}"
     return str(Path(RAG_UPLOAD_DIR, user_id, unique_name).resolve())
 
 
@@ -381,6 +391,8 @@ async def cleanup_temp_file_async(file_path: str) -> None:
     """Clean up temporary file asynchronously."""
     try:
         await aiofiles.os.remove(file_path)
+    except FileNotFoundError:
+        logger.debug("Temporary file was never created | Path: %s", file_path)
     except Exception as e:
         logger.error(
             "Failed to remove temporary file | Path: %s | Error: %s | Traceback: %s",

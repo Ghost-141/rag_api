@@ -40,6 +40,22 @@ class TestMakeUniqueTempPath:
         path = _make_unique_temp_path("user1", "data.csv")
         assert path.endswith(".csv")
 
+    def test_long_bangla_filename_fits_the_linux_byte_limit(
+        self, monkeypatch, tmp_path
+    ):
+        monkeypatch.setattr("app.routes.document_routes.RAG_UPLOAD_DIR", str(tmp_path))
+        filename = "_ইউজিসি_পিএইচডি_স্কলারশিপ_২০২৬-২০২৭__প্রোগ্রামের_আবেদন_গ্রহণের_সময়সীমা_বৃদ্ধিকরণ.pdf.extracted.txt"
+        name = Path(_make_unique_temp_path("user1", filename)).name
+        assert len(name.encode("utf-8")) <= 255
+        assert name.startswith("_ইউজিসি_পিএইচডি")
+        assert name.endswith(".txt")
+
+    def test_short_filename_keeps_its_full_stem(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("app.routes.document_routes.RAG_UPLOAD_DIR", str(tmp_path))
+        name = Path(_make_unique_temp_path("user1", "রিপোর্ট.pdf")).name
+        assert name.startswith("রিপোর্ট_")
+        assert name.endswith(".pdf")
+
     def test_path_stays_within_upload_dir(self, monkeypatch, tmp_path):
         monkeypatch.setattr("app.routes.document_routes.RAG_UPLOAD_DIR", str(tmp_path))
         path = _make_unique_temp_path("user1", "file.txt")
