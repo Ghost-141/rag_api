@@ -185,6 +185,15 @@ async def test_renaming_updates_title_type_and_keyword_match(pool):
     assert await kb.rename_document(pool, "du", "doc-1", "Not theirs", None) == 0
 
 
+async def test_lists_only_the_callers_document_ids(pool):
+    await index(pool, "bdren", "doc-2", 1, DIRECTORY[:1])
+    await index(pool, "bdren", "doc-1", 1, DIRECTORY, activate=False)
+    await index(pool, "du", "doc-9", 1, [chunk(0, "Library hours")])
+    assert await kb.list_document_ids(pool, "bdren") == ["doc-1", "doc-2"]
+    assert await kb.list_document_ids(pool, "du") == ["doc-9"]
+    assert await kb.list_document_ids(pool, "nobody") == []
+
+
 def _request(user):
     request = Request({"type": "http", "headers": []})
     request.state.user = user

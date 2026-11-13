@@ -95,6 +95,12 @@ async def activate_version(body: KbActivateRequest, tenant: str = Depends(kb_ten
     return {"chunks": count}
 
 
+@router.get("/documents")
+async def list_documents(tenant: str = Depends(kb_tenant)):
+    pool = await PSQLDatabase.get_pool()
+    return {"doc_ids": await kb.list_document_ids(pool, tenant)}
+
+
 @router.patch("/documents/{doc_id}")
 async def rename_document(
     doc_id: str, body: KbRenameRequest, tenant: str = Depends(kb_tenant)

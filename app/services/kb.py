@@ -181,6 +181,15 @@ async def activate(pool, tenant_id: str, doc_id: str, version: int) -> int:
     return count
 
 
+async def list_document_ids(pool, tenant_id: str) -> List[str]:
+    """Every document this tenant has chunks for, current or not, for reconciliation."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT DISTINCT doc_id FROM kb_chunks WHERE tenant_id = $1 ORDER BY doc_id", tenant_id
+        )
+    return [row["doc_id"] for row in rows]
+
+
 async def remove_document(pool, tenant_id: str, doc_id: str) -> int:
     async with pool.acquire() as conn:
         result = await conn.execute(
