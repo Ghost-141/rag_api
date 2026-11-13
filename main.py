@@ -23,7 +23,7 @@ from app.config import (
     vector_store,
 )
 from app.middleware import security_middleware
-from app.routes import document_routes, pgvector_routes
+from app.routes import document_routes, kb_routes, pgvector_routes
 from app.services.database import PSQLDatabase, ensure_vector_indexes
 from app.services.vector_store.factory import close_vector_store_connections
 
@@ -45,6 +45,7 @@ async def lifespan(app: FastAPI):
     if VECTOR_DB_TYPE == VectorDBType.PGVECTOR:
         await PSQLDatabase.get_pool()  # Initialize the pool
         await ensure_vector_indexes()
+        await kb_routes.ensure_kb_schema()
 
     yield
 
@@ -90,6 +91,9 @@ app.state.PDF_EXTRACT_IMAGES = PDF_EXTRACT_IMAGES
 
 # Include routers
 app.include_router(document_routes.router)
+
+if VECTOR_DB_TYPE == VectorDBType.PGVECTOR:
+    app.include_router(kb_routes.router)
 if debug_mode:
     app.include_router(router=pgvector_routes.router)
 
