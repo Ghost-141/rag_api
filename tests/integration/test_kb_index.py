@@ -173,6 +173,18 @@ async def test_search_uses_the_hnsw_index_at_realistic_size(pool):
     assert "Index Scan using" in plan and "embedding_idx" in plan, plan
 
 
+async def test_renaming_updates_title_type_and_keyword_match(pool):
+    await index(pool, "bdren", "doc-1", 1, DIRECTORY)
+    assert await kb.rename_document(pool, "bdren", "doc-1", "Operations directory", "notice") == 3
+    rows = await pool.fetch("SELECT DISTINCT title, doc_type FROM kb_chunks WHERE doc_id = 'doc-1'")
+    assert [(r["title"], r["doc_type"]) for r in rows] == [("Operations directory", "notice")]
+    found = await pool.fetchval(
+        "SELECT count(*) FROM kb_chunks WHERE doc_id = 'doc-1' AND tsv @@ to_tsquery('simple', 'operations')"
+    )
+    assert found == 3
+    assert await kb.rename_document(pool, "du", "doc-1", "Not theirs", None) == 0
+
+
 def _request(user):
     request = Request({"type": "http", "headers": []})
     request.state.user = user

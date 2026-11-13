@@ -189,6 +189,43 @@ async def remove_document(pool, tenant_id: str, doc_id: str) -> int:
     return int(result.split()[-1])
 
 
+async def rename_document(
+    pool, tenant_id: str, doc_id: str, title: Optional[str], doc_type: Optional[str]
+) -> int:
+    """Updates a document's title and type on every stored version and rebuilds the weighted
+    keyword index, which carries the title. Embeddings keep the old title until re-indexed."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            rows = await conn.fetch(
+                "SELECT version, chunk_index, title, section_path FROM kb_chunks "
+                "WHERE tenant_id = $1 AND doc_id = $2",
+                tenant_id,
+                doc_id,
+            )
+            updates = [
+                (
+                    tenant_id,
+                    doc_id,
+                    row["version"],
+                    row["chunk_index"],
+                    title or row["title"],
+                    doc_type,
+                    fold(f"{title or row['title']} {row['section_path']}"),
+                )
+                for row in rows
+            ]
+            await conn.executemany(
+                """
+                UPDATE kb_chunks SET title = $5, doc_type = COALESCE($6, doc_type),
+                    tsv = setweight(to_tsvector('simple', $7), 'A')
+                        || setweight(to_tsvector('simple', search_text), 'D')
+                WHERE tenant_id = $1 AND doc_id = $2 AND version = $3 AND chunk_index = $4
+                """,
+                updates,
+            )
+    return len(rows)
+
+
 SEARCH_SQL = """
 WITH vec AS (
     SELECT doc_id, version, chunk_index,

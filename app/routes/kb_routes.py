@@ -40,6 +40,11 @@ class KbActivateRequest(BaseModel):
     version: int = Field(ge=1)
 
 
+class KbRenameRequest(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=300)
+    doc_type: Optional[str] = Field(default=None, min_length=1, max_length=32)
+
+
 class KbQueryRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
     k: int = Field(default=8, ge=1, le=30)
@@ -88,6 +93,15 @@ async def activate_version(body: KbActivateRequest, tenant: str = Depends(kb_ten
     if count == 0:
         raise HTTPException(status_code=409, detail="No chunks stored for this version")
     return {"chunks": count}
+
+
+@router.patch("/documents/{doc_id}")
+async def rename_document(
+    doc_id: str, body: KbRenameRequest, tenant: str = Depends(kb_tenant)
+):
+    pool = await PSQLDatabase.get_pool()
+    updated = await kb.rename_document(pool, tenant, doc_id, body.title, body.doc_type)
+    return {"updated": updated}
 
 
 @router.delete("/documents/{doc_id}")
